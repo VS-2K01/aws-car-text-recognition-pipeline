@@ -223,5 +223,3 @@ This was an **individual assignment** — I designed and wrote both services end
 ## License
 
 [MIT](LICENSE) — feel free to reuse or adapt for learning purposes.
-
-**Contact:** [github.com/VS-2K01](https://github.com/VS-2K01) — [TODO: add your preferred public contact, e.g. LinkedIn or a portfolio site]
