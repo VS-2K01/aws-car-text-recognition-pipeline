@@ -1,0 +1,27 @@
+# Maven build output
+target/
+*.class
+
+# Packaged artifacts (rebuild locally instead of committing binaries)
+*.jar
+*.war
+
+# Logs
+*.log
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# AWS / local credentials — never commit real ones
+.aws/
+*.pem
+.env
