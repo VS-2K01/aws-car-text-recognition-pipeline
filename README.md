@@ -2,6 +2,7 @@
 
 A distributed, event-driven image-analysis pipeline built on EC2, S3, SQS, and Rekognition. Two independently deployable Java services coordinate through a message queue — one detects cars in images, the other reads text off the images that had a car — with neither service ever talking to the other directly.
 
+![Build](https://github.com/VS-2K01/aws-car-text-recognition-pipeline/actions/workflows/build.yml/badge.svg)
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Maven](https://img.shields.io/badge/Build-Maven-blue)
 ![AWS](https://img.shields.io/badge/Cloud-AWS-FF9900)
