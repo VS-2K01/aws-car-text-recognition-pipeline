@@ -1,296 +1,226 @@
-CS643 - PROJECT 1 - Vivek Shah - README
+# AWS Car & Text Recognition Pipeline
 
+A distributed, event-driven image-analysis pipeline built on EC2, S3, SQS, and Rekognition. Two independently deployable Java services coordinate through a message queue — one detects cars in images, the other reads text off the images that had a car — with neither service ever talking to the other directly.
 
+![Java](https://img.shields.io/badge/Java-17-orange)
+![Maven](https://img.shields.io/badge/Build-Maven-blue)
+![AWS](https://img.shields.io/badge/Cloud-AWS-FF9900)
+![License](https://img.shields.io/badge/License-MIT-green)
 
----------------------------------------------------------------------
-
-1\) Overview
-
----------------------------------------------------------------------
-
-
-
-The goal of this project is to implement a distributed cloud-based image analysis system using multiple AWS components. The analysis system will be capable of detecting cars in images and extracting any visible text. To do so, it the system will leverage machine learning tools provided by AWS Rekognition. The solution leverages Amazon EC2 for computation, Amazon S3 for storage, Amazon SQS for inter-instance communication, and the AWS SDK for programmatic access to these services.
-
-
-
-Two separate JAVA applications are deployed in this system, one to each EC2 instance to perform distinct tasks.
-
-
-
-EC2-A - Car Detector:
-
-This instance analyzes images pulled from an AWS S3 bucket. Using Rekognition's DetectLabels feature it identifies cars in images with at least 80% confidence. For each identified image, it sends the image's filename to an SQS queue. Once all images in the S3 bucket have been analyzed it sends a special "-1" message to signal the end of messages being sent.
-
-
-
-EC2-B - Text Reader:
-
-This instance reads messages from the same SQS queue, retrieving the image filenames sent. It downloads the corresponding images from the same S3 bucket and uses Rekognition's DetectText feature to extract visible images from each image. Only text with an 80% or higher confidence is extracted. The extracted text is then written to a local output file for verification.
-
-
-
-This README will provide an overview of the architecture as well as a guide to setting up, running, and validating the app.
-
-
-
-Sections:
-
-1. Overview
-2. Architecture Diagram
-3. Step-By-Step Environment Setup
-4. Step-By-Step Running the Application
-5. Step-By-Step Shutdown of Environment
-6. YouTube Link
-7. Use of AI Assistance
-
-
-
----------------------------------------------------------------------
-
-2\) Architecture Diagram
-
----------------------------------------------------------------------
-
-&nbsp;				S3 Bucket
-
-&nbsp;  \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ 
-
-&nbsp; |                                 |                             |
-
-EC2-A-------------------------->SQS Queue---------------------->EC2-B--->output.txt (On EC2-B)
-
-&nbsp; |                                 |                             |
-
-&nbsp; |<------------------------>AWS Rekognition<-------------------->|
-
-
-
-Data Flow:
-
-S3 Bucket -> EC2-A - Car Detector pulls images from the S3 bucket
-
-EC2-A -> Rekognition (DetectLabels) - EC2-A sends each image to AWS Rekognition To Detect Cars
-
-Rekognition (DetectLabels) -> EC2-A - Rekognition identifies which images contain cars with 80% or more confidence
-
-EC2-A -> SQS - EC2-A sends messages containing the filenames of car images, then a special "-1" message to indicate no more messages to be sent
-
-EC2-B <-> SQS - Polls SQS queue and retrieves messages
-
-S3 -> EC2-B - EC2-B downloads corresponding images for each message received
-
-EC2-B <-> Rekognition (DetectText) - Send each image to AWS Rekognition and sends back extracted text lines (>= 80% confidence)
-
-EC2-B -> output.txt - Writes the extracted text results locally
-
-
-
----------------------------------------------------------------------
-
-2\) Step-By-Step Environment Setup
-
----------------------------------------------------------------------
-
-
-
-Step 1: Launch the AWS Learner Lab
-
-1. Log into your course portal and navigate to AWS Academy Learner Lab
-2. Click "Start Lab" to initialize your cloud environment.
-3. Click "AWS Details" and save: Access Key ID / Secret Access Key / Session Token (temp credentials)
-4. Also save the SSH key as a .pem file locally on your laptop. Note its location it will be used to ssh into instances later.
-5. Click "AWS" button to open the AWS Management Console
-6. Verify that the region displayed in the top-right corner is US East (N. Virginia) - us-east-1
-
-
-
-Step 2: Prepare Networking (Security Groups)
-
-1. In the AWS Management Console, search for "EC2", then go to "Security Groups", then "Create Security Group".
-2. Set the name of the security group. Ex: cs643-project1-ec2-sg
-3. Set VPC to default
-4. Set Inbound Rules for SSH, HTTPS, and HTTP to MY IP
-5. Leave Outbound Rules to All Traffic
-6. Create Security Group
-
-
-
-Step 3: Create Two EC2 Instances
-
-1. In the AWS Management Console, search for "EC2" and open the "Instances" page.
-2. Click "Launch Instance"
-3. Provide Name of Instance
-4. Select "Amazon Linux", then "Amazon Linux 2023 kernel-6.12 AMI" for AMI
-5. Select "t3.micro" for Instance Type
-6. Select "vockey" for Key Pair
-7. For Network Settings: select "Select Existing Security Group", then select the security you created in step 2
-8. Click "Launch Instance"
-9. Save the Public IP address of the EC2 instance, it will be used later.
-10. Repeat this process to create a second instance with a different name.
-
-
-
-Step 4: Create the SQS Queue
-
-1. In the AWS Management Console, search for "SQS" and click "Create Queue".
-2. Click "Standard"
-3. Provide name of Queue
-4. Leave the rest as its default settings
-5. Click "Create Queue"
-6. Save the SQS Queue URL, this will be needed later.
-
-
-
-Step 5: Connect via SSH to Each Instance
-
-1. Open a local terminal session in the location of the SSH Key you saved earlier.
-2. SSH into the instance using the following command: ssh -i <key\_filename>.pem ec2-user@<EC2-PUBLIC-IP>
-3. Open terminal sessions open, one for each EC2 instance.
-
-
-
-Step 6: Update and Install Required Tools
-
-1. Run the following commands on both EC2 Instances: "sudo yum update -y" and "sudo dnf install -y java-17-amazon-corretto maven awscli"
-2. Verify installation with the following commands: "java -version", "mvn -v", and "aws --version"
-
-
-
-Step 7: Configure AWS Credentials
-
-1. Create AWS Credential Directory: "mkdir -p ~/.aws"
-2. Create AWS Credential File: "nano ~/.aws/credentials"
-3. Copy and Paste the Credentials copied in Step 1 into this file. Save and Exit File
-4. Export Region Variables: "export AWS\_REGION=us-east-1" and "export AWS\_DEFAULT\_REGION=us-east-1"
-5. Verify Credentials are Valid: "aws sts get-caller-identity"
-6. Repeat this process for both EC2 instances
-
-
-
-Step 8: Environment Variables for Convenience
-
-1. On both EC2 instances execute these commands: "export BUCKET="cs643-njit-project1"" and "export QUEUE\_URL="<your Queue URL saved in Step 4>""
-
-
-
-Step 9: Check Connectivity to AWS Components
-
-1. From either EC2 instance, verify S3 connection: "aws ls s3://cs643-njit-project1/ | head"
-2. From either EC2 instance, verify SQS connection: "aws sqs get-queue-attributes --queue-url "$QUEUE\_URL" --attribute-names ApproximateNumberOfMessages"
-
-
-
-Step 10: Prepare Application Directories
-
-1. On EC2-A, run the following commands in order: "mkdir ~/car-detector" then "cd ~/car-detector"
-2. Upload or clone the folders, files, and code provided alongside this README file (car-detector) to this directory
-3. On EC2-B, run the following commands in order:"mkdir ~/text-reader" then "cd ~/text-reader"
-4. Upload or clone the folders, files, and code provided alongside this README file (text-reader) to this directory
-5. For each instance confirm it contains a valid pom.xml file and the Java source folders under src/main/java/com/cs643
-
-
-
-Step 11: Build the Applications
-
-1. On EC2-A instance, run the following commands in order: "cd ~/car-detector" then "mvn clean package"
-2. Verify Build: "ls target/"
-3. On EC2-B instance, run the following commands in order: "cd ~/text-reader" then "mvn clean package"
-4. Verify Build: "ls target/"
-
-
-
-
-
----------------------------------------------------------------------
-
-4\) Step-By-Step Running The Application
-
----------------------------------------------------------------------
-
-Step 1 (Optional): Purge the SQS Queue
-
-1. Run on either EC2 instance: "aws sqs purge-queue --queue-url "$QUEUE\_URL" then "sleep 65"
-2. Verify the queue is empty: "aws sqs get-queue-attributes --queue-url "$QUEUE\_URL" --attribute-names ApproximateNumberOfMessages"
-
-
-
-Step 2: Run Car Detector Application
-
-1. Execute the following commands on EC2-A: 
-   "cd ~/car-detector"
-   "java -jar target/car-detector-1.0.0.jar --bucket "$BUCKET" --queue-url "$QUEUE\_URL" --max-images 10"
-
-
-
-Step 3: Run Text Reader Application
-
-1. Execute the following commands on EC2-B:
-   "cd ~/text-reader"
-   "java -jar target/text-reader-1.0.0.jar --bucket "$BUCKET" --queue-url "$QUEUE\_URL" --out /home/ec2-user/output.txt"
-
-
-
-NOTE: Step 2 and 3 are interchangeable. Step 3 can be done first and the solution would still work.
-
-
-
-Step 4: Verify Output
-
-1. On EC2-A after executing commands in Step 2, you would see output reviewing each image and indicating true/false if there was a car detected.
-   It would end with a message indicating that the sentinel message was sent.
-2. On EC2-B, after executing commands in Step 3, it will wait for messages to arrive in the SQS queue. It will print out logs indicating if there was text detected in the image. If there was it will also print out the text in the image.
-3. The text lines will also be written to the output.txt file after all images have been processed.
-4. Verify text in file: "nano /home/ec2-user/output.txt"
-
-
-
----------------------------------------------------------------------
-
-5\) Step-By-Step Shutdown of Environment
-
----------------------------------------------------------------------
-Once application testing has been completed, proper shutdown of the applications and environment is critical.
-
-
-
-Step 1: Closing SSH Sessions
-
-1. Enter "exit" into terminal, this will end the SSH session.
-2. Close Terminal
-
-
-
-Step 2: Stop EC2 Instances
-
-1. In the AWS Management Console, navigate to EC2 then Instances.
-2. Select both EC2 instances, then click "Instance State", then "Stop Instance"
-3. Once stopped, close out the AWS Management Console Window.
-
-
-
-Step 3: End Learner Lab Session
-
-1. In the Learner Lab Window, click "End Lab"
-2. You have successfully ended the AWS Learner Lab session.
-
-
-
----------------------------------------------------------------------
-
-6\) YouTube Link
-
----------------------------------------------------------------------
-
-Link: https://youtu.be/V_pxyKxnAhU
-
-
-
----------------------------------------------------------------------
-
-7\) Use of AI Assistance
-
----------------------------------------------------------------------
-
-An AI assistant was used to breakdown the project guidelines document into tasks to be completed in order to achieve the desired result. It was also used to assist in error explanations to assist in troubleshooting errors. I found the AI assistant very helpful in breaking down this project into separate and meaningful tasks. This helped me organize my thoughts and determine a plan of action I could follow. As I completed tasks, I checked them off the list and eventually completed the project. This helped from a project management perspective and allow me to plan out and focus my energy effectively. Additionally, working with AWS Rekognition for the first time, there were a couple of errors that I did not understand. The AI assistant was helpful in explaining the bugs and pinpointing where the issue was. With this help, I was able to resolve bugs and complete the project. This was very helpful in that respect.
-
+## Overview
+
+This started as an individual assignment for NJIT CS643 (Cloud Computing): build a working distributed system on AWS using only managed cloud primitives — no shared filesystem, no direct service-to-service calls, no single point of coordination other than a queue.
+
+**The problem:** analyze a batch of images (detect cars, then read any visible text) using two separate compute nodes that must produce a correct result *regardless of which one boots up first or how fast either one runs*.
+
+**The solution:** two Java applications, each deployed to its own EC2 instance, that never call each other. `car-detector` (EC2-A) pulls images from S3 and asks Rekognition if there's a car in each one. Anything that qualifies gets its filename dropped on an SQS queue. `text-reader` (EC2-B) has no idea `car-detector` exists — it just long-polls that same queue, downloads whatever filename shows up, and asks Rekognition to read text off it. The queue is the entire contract between them.
+
+**Who this is for:** anyone evaluating cloud/distributed-systems fundamentals — service decoupling via queues, IAM-based auth instead of hardcoded credentials, retry/backoff for transient cloud API failures, and working directly with managed ML services (Rekognition) instead of hosting a model yourself.
+
+## Key Features
+
+- **Fully decoupled services** — `car-detector` and `text-reader` share no code path at runtime and never call each other; SQS is the only integration point, so either can be redeployed or restarted independently.
+- **Order-independent startup** — correctness doesn't depend on which EC2 instance comes up first (a hard requirement of the assignment); the queue absorbs whichever side gets there first.
+- **Exponential backoff with jitter** on every AWS SDK call (S3, SQS, and Rekognition), added beyond the base assignment requirements to make the pipeline resilient to the transient throttling/network errors that are common against real AWS endpoints.
+- **Long-polling SQS consumer** (20s waits) instead of tight-loop polling, to cut down on empty-receive API calls.
+- **Graceful, signaled shutdown** — `car-detector` emits a sentinel message (`"-1"`) when it's out of images; `text-reader` keeps draining the queue until it sees that signal, so no image is dropped by a race at the end of the run.
+- **At-least-once-safe message handling** — an in-memory de-dup set on the consumer side, since SQS standard queues can redeliver.
+- **No hardcoded credentials anywhere** — both services use the AWS SDK's `DefaultCredentialsProvider`, which picks up EC2 instance-role credentials or the AWS Academy Learner Lab's temporary session credentials automatically.
+- **Confidence-gated inference** — both the car label detection and the text detection only act on Rekognition results at ≥80% confidence, per the assignment spec.
+
+## Demo
+
+📺 **[Watch the demo video](https://youtu.be/V_pxyKxnAhU)** — compiling and running both services end-to-end against live AWS infrastructure.
+
+![AWS EC2 console showing both instances running](docs/images/ec2_aws_mgmt_console.jpg)
+
+More setup/verification screenshots (security group, SQS queue, per-instance file structure, build output) are in [`docs/images/`](docs/images/).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    S3[("S3 Bucket<br/>cs643-njit-project1")]
+    A["EC2-A<br/>car-detector"]
+    Q[["SQS Standard Queue"]]
+    B["EC2-B<br/>text-reader"]
+    R{{"AWS Rekognition"}}
+    OUT[["output.txt<br/>(on EC2-B's EBS volume)"]]
+
+    S3 -- "list & fetch images" --> A
+    A -- "DetectLabels" --> R
+    R -- "≥80% confidence" --> A
+    A -- "filename, then sentinel -1" --> Q
+    Q -- "long-poll receive" --> B
+    S3 -- "download flagged image" --> B
+    B -- "DetectText" --> R
+    R -- "≥80% confidence" --> B
+    B -- "write results" --> OUT
+```
+
+**Data flow:**
+1. `car-detector` lists the S3 bucket, pulls the first *N* images (sorted numerically), and runs Rekognition `DetectLabels` on each.
+2. Any image with a `Car` label at ≥80% confidence gets its filename sent to SQS.
+3. Once all *N* images are checked, `car-detector` sends a `"-1"` sentinel and exits.
+4. `text-reader` long-polls the same queue the whole time. For every filename it receives, it downloads the image from S3 and runs Rekognition `DetectText`.
+5. Text lines at ≥80% confidence are collected; on seeing the sentinel (and draining anything still in flight), `text-reader` writes everything to `output.txt` and exits.
+
+For the exact message contract, retry policy, and a couple of known design trade-offs, see **[docs/architecture.md](docs/architecture.md)**.
+
+## Tech Stack
+
+| Category | Technology |
+|---|---|
+| Language | Java 17 |
+| Build | Maven, Maven Shade Plugin (fat-jar packaging) |
+| Cloud compute | Amazon EC2 (Amazon Linux 2023) |
+| Cloud storage | Amazon S3 |
+| Messaging | Amazon SQS (Standard queue) |
+| ML / inference | Amazon Rekognition (`DetectLabels`, `DetectText`) |
+| AWS SDK | AWS SDK for Java v2 (`s3`, `sqs`, `rekognition` modules) |
+| Logging | SLF4J (`slf4j-simple`) |
+| Auth | IAM instance-role / AWS Academy Learner Lab temporary credentials via `DefaultCredentialsProvider` |
+
+## Getting Started
+
+### Prerequisites
+- An AWS account or AWS Academy Learner Lab session
+- Two EC2 instances (Amazon Linux 2023, `t3.micro` is sufficient) reachable via SSH
+- Java 17, Maven, and the AWS CLI on both instances
+- An S3 bucket of `.jpg` images (the assignment used a shared public bucket: `cs643-njit-project1`)
+
+### 1. Provision networking
+Create a security group allowing inbound **SSH, HTTP, HTTPS from your IP only** (default VPC). Screenshot: [`docs/images/securitygroup_aws_mgmt_console.jpg`](docs/images/securitygroup_aws_mgmt_console.jpg)
+
+### 2. Launch two EC2 instances
+Amazon Linux 2023, `t3.micro`, using the security group above. Name one for car detection, one for text reading, and note both public IPs.
+
+### 3. Create the SQS queue
+Standard queue, default settings. Note the queue URL.
+
+### 4. Connect and prepare each instance
+```bash
+ssh -i <key_filename>.pem ec2-user@<EC2-PUBLIC-IP>
+sudo yum update -y
+sudo dnf install -y java-17-amazon-corretto maven awscli
+java -version && mvn -v && aws --version
+```
+
+### 5. Configure AWS credentials (both instances)
+```bash
+mkdir -p ~/.aws
+nano ~/.aws/credentials   # paste the Access Key / Secret Key / Session Token from your AWS Details page
+export AWS_REGION=us-east-1
+export AWS_DEFAULT_REGION=us-east-1
+aws sts get-caller-identity   # should print your account/role, confirming the credentials work
+```
+
+### 6. Set convenience env vars (both instances)
+```bash
+export BUCKET="cs643-njit-project1"
+export QUEUE_URL="<your SQS queue URL>"
+```
+
+### 7. Deploy and build
+On EC2-A:
+```bash
+mkdir ~/car-detector && cd ~/car-detector
+# upload/clone this repo's car-detector/ folder here
+mvn clean package
+ls target/    # expect car-detector-1.0.0.jar
+```
+On EC2-B:
+```bash
+mkdir ~/text-reader && cd ~/text-reader
+# upload/clone this repo's text-reader/ folder here
+mvn clean package
+ls target/    # expect text-reader-1.0.0.jar
+```
+
+### 8. Run
+Order doesn't matter — start either one first.
+
+On EC2-A:
+```bash
+java -jar target/car-detector-1.0.0.jar --bucket "$BUCKET" --queue-url "$QUEUE_URL" --max-images 10
+```
+On EC2-B:
+```bash
+java -jar target/text-reader-1.0.0.jar --bucket "$BUCKET" --queue-url "$QUEUE_URL" --out /home/ec2-user/output.txt
+```
+
+| Flag | Required | Default | Meaning |
+|---|---|---|---|
+| `--bucket` | yes | — | S3 bucket to read images from |
+| `--queue-url` | yes | — | SQS queue URL used for coordination |
+| `--max-images` | no | `10` | how many images `car-detector` scans |
+| `--out` | no | `/home/ec2-user/output.txt` | where `text-reader` writes results |
+
+### 9. Verify
+```bash
+cat /home/ec2-user/output.txt
+```
+See [`docs/examples/sample-output.txt`](docs/examples/sample-output.txt) for a real captured run.
+
+### 10. Tear down
+Stop both EC2 instances and end the Learner Lab session when you're done, to avoid ongoing charges.
+
+## Project Structure
+
+```
+aws-car-text-recognition-pipeline/
+├── car-detector/         # EC2-A: Rekognition DetectLabels → SQS
+│   ├── pom.xml
+│   └── src/main/java/com/cs643/...
+├── text-reader/          # EC2-B: SQS → S3 download → Rekognition DetectText → output.txt
+│   ├── pom.xml
+│   └── src/main/java/com/cs643/...
+└── docs/
+    ├── architecture.md   # message contract, retry policy, design notes
+    ├── images/           # AWS console + build/run screenshots
+    └── examples/         # a real captured output.txt
+```
+
+Both modules share the same internal package layout (`config`, `awssdk`, `s3`, `sqs`, `rek`, `util`, `model`) even though they're independent Maven projects — same conventions, different responsibilities.
+
+## Testing
+
+No automated test suite is included — this was validated by running both services against a live AWS environment (real S3 bucket, real SQS queue, real Rekognition calls) and confirming the output against the AWS Console. See [`docs/images/`](docs/images/) for console verification screenshots and [`docs/examples/sample-output.txt`](docs/examples/sample-output.txt) for a captured run. Adding a proper test suite (e.g., JUnit + LocalStack for mocked AWS calls) is on the [roadmap](#roadmap--future-improvements) below.
+
+## Results
+
+A real run against the assignment's 10-image bucket correctly identified 4 images with both a car and readable text:
+
+```
+1.jpg: "$ BR8167"
+4.jpg: "YHI9 OTZ"
+3.jpg: "45 P P 11:50 85% PARKING"
+7.jpg: "Lamborghini LP 610 LB"
+```
+
+License plates, a parking sign, and a car-model badge were all read correctly at ≥80% Rekognition confidence — including on images where the "car" detection triggered on a badge/logo rather than the whole vehicle. This assignment received **an A**.
+
+### Challenges
+
+- Getting the coordination right without either instance depending on the other's startup order took real thought — the sentinel message plus a "drain-then-exit" consumer loop turned out to be the cleanest solution.
+- This was my first time working with AWS Rekognition, and I ran into a few non-obvious errors (confidence field nullability, `TextTypes.LINE` vs `WORD` detections) while wiring it up.
+- **AI assistance:** I used an AI assistant to break the assignment's requirements down into a task checklist, and to help explain a couple of the Rekognition-related errors above once I hit them. I did not use it to author the core application logic — the architecture and code are mine. I found it most useful for project-management (staying organized against the spec) and as a faster way to interpret unfamiliar SDK error messages than reading Javadoc alone.
+
+## Roadmap / Future Improvements
+
+- [ ] Automated tests (JUnit + LocalStack for mocked S3/SQS/Rekognition)
+- [ ] CI pipeline (GitHub Actions) to build both modules and run tests on push
+- [ ] Infrastructure as code (Terraform or CloudFormation) instead of manual console setup
+- [ ] Containerize both services (Docker) as an alternative to raw EC2 deployment
+- [ ] Make the 80% confidence threshold configurable via CLI flag instead of hardcoded
+- [ ] Emit structured JSON results instead of plain text (the `jackson-databind` dependency is already declared in both `pom.xml` files but currently unused — this would put it to work)
+
+## My Role & Contributions
+
+This was an **individual assignment** — I designed and wrote both services end-to-end: the AWS architecture, the Java application code in both modules, the retry/backoff resilience layer (added beyond the base requirements), and provisioned/configured all the AWS infrastructure (EC2, security groups, SQS) through the AWS Console.
+
+## License
+
+[MIT](LICENSE) — feel free to reuse or adapt for learning purposes.
+
+**Contact:** [github.com/VS-2K01](https://github.com/VS-2K01) — [TODO: add your preferred public contact, e.g. LinkedIn or a portfolio site]
